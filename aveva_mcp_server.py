@@ -447,24 +447,24 @@ def create_basic_seperation_flowsheet_fast(
     comp_disp = ", ".join(components)
 
     # Only the tools we actually use in fast mode
-    allowed_tools = ["sim_connect", 
-    "sim_list", 
-    "sim_create",
-     "sim_open",
-      "sim_save",
-       "model_add", 
-       "fluid_create", 
-       "fluid_assign_to_source",
-        "conn_create",
-         "var_get_many", 
-         "var_set_many", 
-         "param_set_many", 
-         "sim_status", 
-         "model_list", 
-         "conn_list", 
-         "model_get_parameters", 
-         "model_get_variables", 
-         "sim_status"]
+    allowed_tools = [
+        "aps_connect",
+        "sim_create",
+        "sim_open",
+        "sim_save",
+        "model_add",
+        "fluid_create",
+        "fluid_to_source",
+        "models_connect",
+        "var_get_multiple",
+        "var_set_multiple",
+        "param_set_multiple",
+        "sim_status",
+        "models_list",
+        "connectors_list",
+        "model_all_params",
+        "model_all_vars",
+    ]
         
 
     invalid_guard = (
@@ -481,14 +481,14 @@ def create_basic_seperation_flowsheet_fast(
         f"  • {column_name}.Reboiler = '{reboiler_type}'\n"
         f"  • {column_name}.StaticHead = '{static_head}'\n"
         f"  • {column_name}.ReferenceStreams = '{reference_streams}'\n"
-        "- These are typically PARAMETERS in AVEVA; use update_parameters to set them.\n"
+        f"- These are typically PARAMETERS in AVEVA; set them with param_set_multiple(parameter_data=..., sim_name=\"{sim_name}\").\n"
     )
 
     return f"""
 FAST MODE — two components, batched writes, **column parameters handled BEFORE connections**, no cleanup.
 Use ONLY these tools: {allowed_tools}
 
-On ANY error or unmet requirement (including add_model name conflicts or write failures):
+On ANY error or unmet requirement (including model_add name conflicts or write failures):
 - **PAUSE and ask the user** with the exact failing path and tool response.
 - Offer: (a) fix & retry, (b) skip & continue, (c) abort.
 
@@ -500,31 +500,32 @@ Target:
 - Fluid: "{fluid_name}" with components [{comp_disp}], method "{thermo_method}", phases "{phases}"
 
 Plan:
-1) connect_to_aveva
-2) Try open_simulation("{sim_name}"); if missing → create_simulation("{sim_name}", owner="Prompt MCP") then open_simulation("{sim_name}")
-3) create_fluid_complete(library_name="{sim_name}", fluid_name="{fluid_name}",
-   components=[{comp_disp}], thermo_method="{thermo_method}", phases "{phases}")
+1) aps_connect
+2) Try sim_open("{sim_name}"); if missing → sim_create("{sim_name}", owner="Prompt MCP") then sim_open("{sim_name}")
+3) fluid_create(library_name="{sim_name}", fluid_name="{fluid_name}",
+   components=[{comp_disp}], thermo_method="{thermo_method}", phases="{phases}")
 
 4) Add models in ONE step each (naming at creation):
-   - add_model("Source", {source_xy[0]}, {source_xy[1]}, "{sim_name}", "{source_name}")
-   - add_model("Column", {column_xy[0]}, {column_xy[1]}, "{sim_name}", "{column_name}")
-   - add_model("Sink", {dist_xy[0]}, {dist_xy[1]}, "{sim_name}", "{dist_sink_name}")
-   - add_model("Sink", {bottoms_xy[0]}, {bottoms_xy[1]}, "{sim_name}", "{bottoms_sink_name}")
+   - model_add("Source", {source_xy[0]}, {source_xy[1]}, "{sim_name}", "{source_name}")
+   - model_add("Column", {column_xy[0]}, {column_xy[1]}, "{sim_name}", "{column_name}")
+   - model_add("Sink", {dist_xy[0]}, {dist_xy[1]}, "{sim_name}", "{dist_sink_name}")
+   - model_add("Sink", {bottoms_xy[0]}, {bottoms_xy[1]}, "{sim_name}", "{bottoms_sink_name}")
 
-5)  -set_fluid_of_source(source_name="{source_name}", fluid_name="{fluid_name}")
-    - connect_models("{source_name}.Out", "{column_name}.Fin")
+5) fluid_to_source(fluid_name="{fluid_name}", source_name="{source_name}")
 
 6) **PRE-CONNECTION COLUMN PARAMETER SETTINGS (MANDATORY):**
 {preconn_params_text}
+   - Set the listed values with param_set_multiple before creating any remaining connectors.
 
 7) **PRE-CONNECTION VARIABLE WRITES (batched):**
-   - set_multiple_variables(variable_data={variable_data_str}, sim_name="{sim_name}")
+   - var_set_multiple(variable_data={variable_data_str}, sim_name="{sim_name}")
    - Variables include feed W/P/T, composition ({comp_mode}), and column DPstage/Contact.
    - If any write fails, **PAUSE** and ask the user how to proceed.
 
-8) connect the column to the sinks
-   - connect_models("{column_name}.Dout", "{dist_sink_name}.In")
-   - connect_models("{column_name}.Lout", "{bottoms_sink_name}.In")
+8) connect the models
+   - models_connect("{source_name}.Out", "{column_name}.Fin")
+   - models_connect("{column_name}.Dout", "{dist_sink_name}.In")
+   - models_connect("{column_name}.Lout", "{bottoms_sink_name}.In")
 
 9) **FINAL COLUMN SETUP SWITCH & SOLVE (MANDATORY PAUSE):**
    - PAUSE and instruct the user to set:
@@ -532,9 +533,9 @@ Plan:
    - Ask the user to let the simulation solve again (or click the appropriate Solve/Run button).
    - Do NOT proceed until the user confirms that the column has re-solved successfully (or reports any issues).
 
-10) save_simulation("{sim_name}")
+10) sim_save("{sim_name}")
 
-11) get_simulation_status("{sim_name}") → brief summary (solved/properly_specified/has_required_data)
+11) sim_status("{sim_name}") → brief summary (solved/properly_specified/has_required_data)
 """
 
 

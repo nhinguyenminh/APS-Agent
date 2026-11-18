@@ -67,8 +67,15 @@ def main():
     try:
         from aveva_mcp_server import mcp
     except ImportError as e:
-        logger.error(f"Failed to import aveva_mcp_server: {e}")
-        logger.error("Make sure you have built the project with: python setup.py build_ext --inplace")
+        logger.error("Failed to import aveva_mcp_server: %s", e)
+        logger.error("Python executable: %s", sys.executable)
+        logger.error(
+            'Install MCP dependencies with: "%s" -m pip install -r requirements.txt',
+            sys.executable,
+        )
+        logger.error(
+            "AVEVA SDK components must be installed separately in this Python environment."
+        )
         sys.exit(1)
     
     # Run the server with selected transport
