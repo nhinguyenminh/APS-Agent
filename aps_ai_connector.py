@@ -34,19 +34,25 @@ CLAUDE_WINGET_ID = "Anthropic.Claude"
 CLAUDE_APPX_PACKAGE_NAME = "AnthropicPBC.Claude"
 CLAUDE_DOWNLOAD_URL = "https://claude.com/download"
 
-BACKGROUND = "#101827"
-SURFACE = "#182437"
-INPUT = "#0D1522"
-TEXT = "#E8EEF7"
-MUTED = "#9AABC0"
-ACCENT = "#4F8CFF"
-ACCENT_HOVER = "#3D78E8"
+BACKGROUND = "#0B111C"
+SURFACE = "#172434"
+INPUT = "#0D1724"
+TEXT = "#EEF3F8"
+MUTED = "#A5B6C5"
+ACCENT = "#70E1C4"
+ACCENT_HOVER = "#91EBD5"
 SDK_RELATIVE_PATH = Path(
     "Documents",
     "Digital Engineering",
     "Aveva Process Simulation",
     "Toolkits",
     "ScriptingInterface",
+)
+
+PROMPT_NAMES = (
+    "Check APS connection",
+    "Read simulation and flowsheet",
+    "Analyze the flowsheet",
 )
 
 
@@ -679,8 +685,8 @@ class ConnectorApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("APS AI Connector")
-        self.root.geometry("760x500")
-        self.root.minsize(660, 440)
+        self.root.geometry("880x620")
+        self.root.minsize(740, 540)
         self.root.configure(bg=BACKGROUND)
 
         self.settings_error: str | None = None
@@ -710,6 +716,10 @@ class ConnectorApp:
         )
         self.status = tk.StringVar(value="Choose an AI client, then connect.")
         self.client_hint = tk.StringVar()
+        self.guide_hint = tk.StringVar()
+        self.prompt_name = tk.StringVar(value=PROMPT_NAMES[0])
+        self.simulation_name = tk.StringVar()
+        self.copy_status = tk.StringVar()
         self.scan_results: queue.Queue[tuple[list[PythonRuntime], str | None]] = (
             queue.Queue()
         )
@@ -734,8 +744,11 @@ class ConnectorApp:
         self._build_ui()
         self.client_name.trace_add("write", self._connection_selection_changed)
         self.python_path.trace_add("write", self._connection_selection_changed)
+        self.prompt_name.trace_add("write", self._refresh_prompt)
+        self.simulation_name.trace_add("write", self._refresh_prompt)
         self._refresh_config()
         self._refresh_client_hint()
+        self._refresh_prompt()
         self.root.after(150, self._start_scan)
         if self.settings_error:
             self.root.after(
@@ -757,7 +770,11 @@ class ConnectorApp:
             "Title.TLabel",
             background=BACKGROUND,
             foreground=TEXT,
-            font=("Segoe UI", 22, "bold"),
+            font=("Segoe UI", 25, "bold"),
+        )
+        style.configure(
+            "Eyebrow.TLabel", background=BACKGROUND, foreground=ACCENT,
+            font=("Segoe UI", 9, "bold"),
         )
         style.configure(
             "Subtitle.TLabel", background=BACKGROUND, foreground=MUTED
@@ -803,47 +820,52 @@ class ConnectorApp:
         style.configure(
             "Primary.TButton",
             background=ACCENT,
-            foreground="#FFFFFF",
-            padding=(14, 9),
+            foreground="#092621",
+            padding=(20, 11),
             borderwidth=0,
+            font=("Segoe UI", 10, "bold"),
         )
         style.map(
             "Primary.TButton",
-            background=[("active", ACCENT_HOVER), ("disabled", "#42516A")],
+            background=[("active", ACCENT_HOVER), ("disabled", "#354A50")],
             foreground=[("disabled", MUTED)],
         )
         style.configure(
             "Secondary.TButton",
-            background="#26364D",
+            background="#243648",
             foreground=TEXT,
-            padding=(12, 8),
+            padding=(16, 10),
             borderwidth=0,
         )
         style.map(
             "Secondary.TButton",
-            background=[("active", "#334963"), ("disabled", "#26364D")],
+            background=[("active", "#32485E"), ("disabled", "#243648")],
         )
 
     def _build_ui(self) -> None:
-        container = ttk.Frame(self.root, style="Root.TFrame", padding=32)
+        container = ttk.Frame(self.root, style="Root.TFrame", padding=(36, 28))
+        self.home_container = container
         container.pack(fill=tk.BOTH, expand=True)
         container.columnconfigure(0, weight=1)
-        container.rowconfigure(3, weight=1)
+        container.rowconfigure(4, weight=1)
 
         ttk.Label(
-            container, text="APS AI Connector", style="Title.TLabel"
+            container, text="APS  /  AI CONNECTOR", style="Eyebrow.TLabel"
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(
+            container, text="Connect your AI.", style="Title.TLabel"
+        ).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(
             container,
-            text="Set up your AI client for AVEVA Process Simulation.",
+            text="Set up your AI client and start working with AVEVA Process Simulation.",
             style="Subtitle.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(5, 24))
+        ).grid(row=2, column=0, sticky="w", pady=(5, 22))
 
-        connection_card = ttk.Frame(container, style="Card.TFrame", padding=22)
-        connection_card.grid(row=2, column=0, sticky="ew")
+        connection_card = ttk.Frame(container, style="Card.TFrame", padding=24)
+        connection_card.grid(row=3, column=0, sticky="ew")
         connection_card.columnconfigure(1, weight=1)
         ttk.Label(
-            connection_card, text="AI client", style="CardTitle.TLabel"
+            connection_card, text="01   Choose an AI client", style="CardTitle.TLabel"
         ).grid(row=0, column=0, sticky="w", padx=(0, 18))
         self.client_picker = ttk.Combobox(
             connection_card,
@@ -871,16 +893,24 @@ class ConnectorApp:
             command=self._connect,
         )
         self.connect_button.grid(row=0, column=1, padx=(0, 10))
+        self.guide_button = ttk.Button(
+            actions,
+            text="Chat guide",
+            style="Secondary.TButton",
+            command=self._show_guide,
+            state=tk.DISABLED,
+        )
+        self.guide_button.grid(row=0, column=2, padx=(0, 10))
         ttk.Button(
             actions,
             text="Settings",
             style="Secondary.TButton",
             command=self._open_settings,
-        ).grid(row=0, column=2)
+        ).grid(row=0, column=3)
 
-        status_card = ttk.Frame(container, style="Card.TFrame", padding=18)
-        status_card.grid(row=3, column=0, sticky="ew", pady=(18, 0))
-        ttk.Label(status_card, text="STATUS", style="CardTitle.TLabel").pack(
+        status_card = ttk.Frame(container, style="Card.TFrame", padding=20)
+        status_card.grid(row=4, column=0, sticky="new", pady=(16, 0))
+        ttk.Label(status_card, text="02   Setup status", style="CardTitle.TLabel").pack(
             anchor="w", pady=(0, 8)
         )
         ttk.Label(
@@ -899,6 +929,131 @@ class ConnectorApp:
             text="Activity bar runs during setup; no percentage estimate is available.",
             style="Muted.Card.TLabel",
         ).pack(anchor="w")
+        self._build_guide_ui()
+
+    def _build_guide_ui(self) -> None:
+        container = ttk.Frame(self.root, style="Root.TFrame", padding=(36, 28))
+        self.guide_container = container
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(5, weight=1)
+        heading = ttk.Frame(container, style="Root.TFrame")
+        heading.grid(row=0, column=0, sticky="ew")
+        heading.columnconfigure(0, weight=1)
+        title = ttk.Frame(heading, style="Root.TFrame")
+        title.grid(row=0, column=0, sticky="w")
+        ttk.Label(title, text="APS  /  READY TO CHAT", style="Eyebrow.TLabel").pack(anchor="w")
+        ttk.Label(title, text="Continue in your AI.", style="Title.TLabel").pack(anchor="w")
+        ttk.Button(
+            heading, text="Back to Connect", style="Secondary.TButton",
+            command=self._show_home,
+        ).grid(row=0, column=1)
+        ttk.Label(
+            container, textvariable=self.guide_hint, style="Subtitle.TLabel",
+            wraplength=680, justify=tk.LEFT,
+        ).grid(row=1, column=0, sticky="w", pady=(8, 8))
+        ttk.Label(
+            container,
+            text="MCP configuration is saved. Start APS; its connection has not yet been tested.",
+            style="Subtitle.TLabel", wraplength=680, justify=tk.LEFT,
+        ).grid(row=2, column=0, sticky="w", pady=(0, 12))
+
+        selectors = ttk.Frame(container, style="Root.TFrame")
+        selectors.grid(row=3, column=0, sticky="ew")
+        selectors.columnconfigure(1, weight=1)
+        selectors.columnconfigure(3, weight=1)
+        ttk.Label(selectors, text="Prompt", style="Subtitle.TLabel").grid(
+            row=0, column=0, padx=(0, 8), sticky="w"
+        )
+        ttk.Combobox(
+            selectors, textvariable=self.prompt_name, values=PROMPT_NAMES,
+            state="readonly",
+        ).grid(row=0, column=1, sticky="ew")
+        ttk.Label(selectors, text="Simulation", style="Subtitle.TLabel").grid(
+            row=0, column=2, padx=(12, 8), sticky="w"
+        )
+        ttk.Entry(selectors, textvariable=self.simulation_name).grid(
+            row=0, column=3, sticky="ew"
+        )
+        ttk.Label(
+            container, text="Enter a simulation name for prompts that open one.",
+            style="Subtitle.TLabel",
+        ).grid(row=4, column=0, sticky="w", pady=(7, 5))
+        self.prompt_text = tk.Text(
+            container, wrap=tk.WORD, height=5, background=INPUT, foreground=TEXT,
+            insertbackground=TEXT, relief=tk.FLAT, padx=10, pady=10,
+            font=("Segoe UI", 10), state=tk.DISABLED,
+        )
+        self.prompt_text.grid(row=5, column=0, sticky="nsew")
+        footer = ttk.Frame(container, style="Root.TFrame")
+        footer.grid(row=6, column=0, sticky="ew", pady=(10, 0))
+        ttk.Button(
+            footer, text="Copy prompt", style="Primary.TButton",
+            command=self._copy_prompt,
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            footer, textvariable=self.copy_status, style="Subtitle.TLabel",
+        ).pack(side=tk.LEFT, padx=(12, 0))
+
+    def _show_home(self) -> None:
+        self.guide_container.pack_forget()
+        self.home_container.pack(fill=tk.BOTH, expand=True)
+
+    def _show_guide(self) -> None:
+        if self.configured_target is None:
+            return
+        self._refresh_guide_hint()
+        self._refresh_prompt()
+        self.home_container.pack_forget()
+        self.guide_container.pack(fill=tk.BOTH, expand=True)
+
+    def _refresh_guide_hint(self) -> None:
+        hints = {
+            "claude": (
+                "Quit Claude Desktop completely, reopen it, and start a chat. "
+                "Enable the AVEVA connector in the chat if necessary."
+            ),
+            "gemini": (
+                "Open PowerShell and run gemini.cmd. Sign in if prompted; "
+                "only trust folders you recognize."
+            ),
+            "codex": "Open PowerShell and run codex.cmd. Sign in if prompted.",
+        }
+        self.guide_hint.set(hints[self._selected_client_id()])
+
+    def _refresh_prompt(self, *_: str) -> None:
+        name = self.simulation_name.get().strip() or "<simulation name>"
+        simulation = json.dumps(name, ensure_ascii=False)
+        prompts = {
+            PROMPT_NAMES[0]: (
+                "Dùng AVEVA MCP tools, gọi aps_connect và báo trạng thái kết nối. "
+                "Không tạo, mở, sửa hoặc lưu simulation."
+            ),
+            PROMPT_NAMES[1]: (
+                "Dùng AVEVA MCP tools, gọi aps_connect rồi sim_open({}). "
+                "Đọc sim_status, models_list và connectors_list. "
+                "Không tạo, sửa hoặc lưu simulation."
+            ).format(simulation),
+            PROMPT_NAMES[2]: (
+                "Dùng AVEVA MCP tools, kết nối APS và mở {} trong phiên MCP. "
+                "Chỉ đọc trạng thái, models, connectors và các biến liên quan; "
+                "tóm tắt dữ liệu có đơn vị, phân biệt dữ liệu với nhận định. "
+                "Không tạo, sửa hoặc lưu simulation."
+            ).format(simulation),
+        }
+        self.prompt_text.configure(state=tk.NORMAL)
+        self.prompt_text.delete("1.0", tk.END)
+        self.prompt_text.insert("1.0", prompts[self.prompt_name.get()])
+        self.prompt_text.configure(state=tk.DISABLED)
+        self.copy_status.set("")
+
+    def _copy_prompt(self) -> None:
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(self.prompt_text.get("1.0", "end-1c"))
+        except tk.TclError as exc:
+            messagebox.showerror("Could not copy prompt", str(exc), parent=self.root)
+            return
+        self.copy_status.set("Copied. Paste it into your AI chat.")
 
     def _build_settings_ui(self, parent: tk.Misc) -> None:
         container = ttk.Frame(parent, style="Root.TFrame", padding=28)
@@ -972,15 +1127,26 @@ class ConnectorApp:
         )
         self.browse_sdk_button.grid(row=3, column=2, padx=(10, 0), pady=6)
 
+        ttk.Label(
+            setup_card,
+            text=(
+                "Choose the ScriptingInterface folder inside Toolkits. "
+                "It should contain requirements.txt and packages\\simcentralconnect."
+            ),
+            style="Muted.Card.TLabel",
+            wraplength=650,
+            justify=tk.LEFT,
+        ).grid(row=4, column=1, columnspan=2, sticky="w", pady=(0, 6))
+
         ttk.Label(setup_card, text="Client settings", style="Card.TLabel").grid(
-            row=4, column=0, sticky="w", padx=(0, 18), pady=6
+            row=5, column=0, sticky="w", padx=(0, 18), pady=6
         )
         ttk.Label(
             setup_card,
             textvariable=self.config_path,
             style="Muted.Card.TLabel",
             wraplength=650,
-        ).grid(row=4, column=1, columnspan=2, sticky="w", pady=6)
+        ).grid(row=5, column=1, columnspan=2, sticky="w", pady=6)
 
         footer = ttk.Frame(container, style="Root.TFrame")
         footer.grid(row=3, column=0, sticky="ew", pady=(16, 0))
@@ -1028,6 +1194,7 @@ class ConnectorApp:
         ):
             self.configured_target = None
             self.status.set("Selection changed. Connect to configure the selected AI client.")
+            self._show_home()
         self._refresh_connect_button()
 
     def _refresh_client_hint(self) -> None:
@@ -1043,11 +1210,13 @@ class ConnectorApp:
 
     def _refresh_connect_button(self) -> None:
         configured = self.configured_target is not None
+        unavailable = self.connect_in_progress or self.scan_in_progress or self.busy
         self.connect_button.configure(
             text="Connected" if configured else "Connect",
-            state=tk.DISABLED
-            if configured or self.connect_in_progress or self.scan_in_progress or self.busy
-            else tk.NORMAL,
+            state=tk.DISABLED if configured or unavailable else tk.NORMAL,
+        )
+        self.guide_button.configure(
+            state=tk.NORMAL if configured and not unavailable else tk.DISABLED,
         )
 
     def _refresh_activity(self) -> None:
@@ -1199,6 +1368,7 @@ class ConnectorApp:
         ):
             self.configured_target = (client, executable)
             self._show_configured_status()
+            self._show_guide()
         elif succeeded:
             self.status.set(
                 "MCP configured for {}. Selection changed; connect the selected "

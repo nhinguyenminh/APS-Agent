@@ -29,7 +29,10 @@ requirements into that exact interpreter. Avoid bare `pip install` commands:
 they may install into a different Python than the AI client will run.
 
 The default Scripting Interface SDK path is detected from the local `Toolkits`
-folder. Use **Install dependencies** in Settings to install that toolkit's local
+folder. If you need to browse for it, select the `ScriptingInterface` folder
+inside `Documents\Digital Engineering\Aveva Process Simulation\Toolkits`; it
+contains `requirements.txt` and `packages\simcentralconnect`.
+Use **Install dependencies** in Settings to install that toolkit's local
 `simcentralconnect` package and the project's MCP requirements into the selected
 Python environment; no AVEVA toolkit files are copied into this repository. The
 Scripting Interface requires AVEVA Process Simulation 5.1 or later, and APS must
@@ -48,6 +51,9 @@ configuration before updating it. Restart the AI client to load the MCP server.
 After successful configuration, **Connected** is shown in the connector and its
 button is disabled until you change the selected client or Python runtime. This
 status confirms configuration only, not a live connection to APS.
+After connecting, the app displays client-specific instructions and several
+copyable prompts. Enter a simulation name for prompts that open one; use
+**Back to Connect** and **Chat guide** to switch between the two views.
 Runtime selection, SDK path, dependency installation, and runtime checks are
 available under **Settings**; these preferences are saved per user.
 The status card shows the current step and an animated activity indicator while

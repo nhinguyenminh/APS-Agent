@@ -49,10 +49,14 @@ class ConnectorStatusTests(unittest.TestCase):
         self.assertEqual(app.connect_button.cget("text"), "Connected")
         self.assertEqual(str(app.connect_button.cget("state")), "disabled")
         self.assertIn("APS connection has not been tested", app.status.get())
+        self.assertEqual(app.guide_container.winfo_manager(), "pack")
+        self.assertIn("Claude Desktop", app.guide_hint.get())
 
         app.client_name.set("Gemini CLI")
         self.assertEqual(app.connect_button.cget("text"), "Connect")
         self.assertEqual(str(app.connect_button.cget("state")), "normal")
+        self.assertEqual(app.home_container.winfo_manager(), "pack")
+        self.assertEqual(str(app.guide_button.cget("state")), "disabled")
 
     def test_success_for_old_runtime_does_not_disable_current_selection(self) -> None:
         app = self.app
@@ -63,6 +67,43 @@ class ConnectorStatusTests(unittest.TestCase):
         app._poll_connect()
         self.assertEqual(str(app.connect_button.cget("state")), "normal")
         self.assertIn("Selection changed", app.status.get())
+        self.assertEqual(app.guide_container.winfo_manager(), "")
+
+    def test_guide_shows_the_selected_client_and_can_be_reopened(self) -> None:
+        app = self.app
+        for name, client, instruction in (
+            ("Gemini CLI", "gemini", "gemini.cmd"),
+            ("Codex CLI", "codex", "codex.cmd"),
+        ):
+            with self.subTest(client=client):
+                app.client_name.set(name)
+                app.connect_results.put((client, app.python_path.get(), True, "configured"))
+                app._poll_connect()
+                self.assertIn(instruction, app.guide_hint.get())
+                app._show_home()
+                self.assertEqual(str(app.guide_button.cget("state")), "normal")
+                app.guide_button.invoke()
+                self.assertEqual(app.guide_container.winfo_manager(), "pack")
+
+    def test_prompt_copy_uses_current_simulation_name(self) -> None:
+        app = self.app
+        app.prompt_name.set("Read simulation and flowsheet")
+        app.simulation_name.set('Sim "1"')
+        expected = app.prompt_text.get("1.0", "end-1c")
+        self.assertIn('sim_open("Sim \\"1\\"")', expected)
+        self.assertIn("Không tạo, sửa hoặc lưu", expected)
+        with patch.object(self.root, "clipboard_clear") as clear:
+            with patch.object(self.root, "clipboard_append") as append:
+                app._copy_prompt()
+        clear.assert_called_once()
+        append.assert_called_once_with(expected)
+        self.assertIn("Copied", app.copy_status.get())
+
+    def test_clipboard_failure_is_reported(self) -> None:
+        with patch.object(self.root, "clipboard_clear", side_effect=tk.TclError("denied")):
+            with patch("aps_ai_connector.messagebox.showerror") as error:
+                self.app._copy_prompt()
+        error.assert_called_once()
 
     def test_rescan_keeps_success_until_runtime_changes(self) -> None:
         app = self.app
@@ -124,6 +165,21 @@ class ConnectorStatusTests(unittest.TestCase):
         app._set_busy(False)
         self.assertEqual(str(app.install_button.cget("state")), "normal")
         self.assertEqual(str(app.python_picker.cget("state")), "readonly")
+
+    def test_settings_identifies_toolkit_folder_without_changing_path(self) -> None:
+        app = self.app
+        original_path = app.scripting_interface_path.get()
+        app._open_settings()
+        hints = app.sdk_entry.master.grid_slaves(row=4, column=1)
+        self.assertEqual(len(hints), 1)
+        hint = hints[0].cget("text")
+        self.assertIn("ScriptingInterface", hint)
+        self.assertIn("requirements.txt", hint)
+        self.assertIn("packages\\simcentralconnect", hint)
+        with patch("aps_ai_connector.filedialog.askdirectory", return_value="") as browse:
+            app._browse_scripting_interface()
+        self.assertEqual(browse.call_args.kwargs["initialdir"], original_path)
+        self.assertEqual(app.scripting_interface_path.get(), original_path)
 
     def test_client_hint_explains_gemini_folder_trust(self) -> None:
         self.app.client_name.set("Gemini CLI")
